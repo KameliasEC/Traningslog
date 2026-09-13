@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#15181C">
+<title>Trainingslog</title>
+<style>
+  :root{
+    --bg:#15181C;
+    --surface:#1D2126;
+    --line:#2C3238;
+    --line-soft:#23282E;
+    --text:#E9ECEF;
+    --muted:#868F99;
+    --faint:#5A626B;
+    --accent:#3E82D8;
+    --deload:#C8923A;
+    --done:#54A374;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    font-variant-numeric:tabular-nums;
+    padding-bottom:4rem;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{
+    position:sticky;top:0;z-index:10;
+    background:var(--bg);
+    border-bottom:1px solid var(--line);
+    padding-top:env(safe-area-inset-top);
+  }
+  .strip{
+    display:flex;gap:0;overflow-x:auto;scrollbar-width:none;
+  }
+  .strip::-webkit-scrollbar{display:none}
+  .strip button{
+    flex:0 0 auto;
+    background:none;border:none;
+    color:var(--muted);
+    font:inherit;font-size:.94rem;font-weight:600;
+    padding:.85rem 1.05rem;
+    border-bottom:2px solid transparent;
+    cursor:pointer;
+  }
+  .strip button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--accent)}
+  .strip button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .weeks button[data-deload][aria-selected="true"]{border-bottom-color:var(--deload)}
+  .days{border-top:1px solid var(--line-soft)}
+  .days button{font-size:.88rem;font-weight:500;padding:.7rem 1.05rem}
+
+  .banner{
+    background:rgba(200,146,58,.12);
+    color:var(--deload);
+    font-size:.82rem;font-weight:600;
+    padding:.55rem 1rem;
+    border-bottom:1px solid rgba(200,146,58,.25);
+  }
+
+  main{padding:0 0 2rem}
+  .ex{border-bottom:1px solid var(--line-soft);padding:1.05rem 1rem 1.15rem}
+  .ex h2{
+    margin:0 0 .2rem;
+    font-size:1.02rem;font-weight:650;letter-spacing:-.005em;
+    line-height:1.25;
+  }
+  .meta{
+    color:var(--muted);font-size:.78rem;
+    display:flex;flex-wrap:wrap;gap:.15rem .8rem;
+    margin-bottom:.7rem;
+  }
+  .meta b{color:var(--text);font-weight:600}
+  .rp{color:var(--deload);font-weight:600}
+
+  .row{
+    display:grid;
+    grid-template-columns:1.6rem 1fr 1fr 4.2rem;
+    align-items:center;
+    gap:.5rem;
+    padding:.3rem 0;
+  }
+  .row .idx{color:var(--faint);font-size:.85rem;font-weight:600}
+  .row input{
+    width:100%;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:7px;
+    color:var(--text);
+    font:inherit;font-size:1.02rem;font-weight:600;
+    font-variant-numeric:tabular-nums;
+    padding:.62rem .55rem;
+    text-align:center;
+    min-height:2.9rem;
+  }
+  .row input::placeholder{color:var(--faint);font-weight:400}
+  .row input:focus{outline:none;border-color:var(--accent);background:#232932}
+  .row.filled input{border-color:rgba(84,163,116,.45)}
+  .prev{
+    color:var(--faint);font-size:.76rem;line-height:1.2;text-align:right;
+    white-space:nowrap;
+  }
+  .head{
+    display:grid;
+    grid-template-columns:1.6rem 1fr 1fr 4.2rem;
+    gap:.5rem;
+    color:var(--faint);font-size:.72rem;font-weight:600;
+    padding-bottom:.2rem;
+  }
+  .head span:nth-child(2),.head span:nth-child(3){text-align:center}
+  .head span:nth-child(4){text-align:right}
+
+  footer{
+    padding:1.4rem 1rem 2rem;color:var(--faint);font-size:.76rem;line-height:1.5;
+  }
+  footer button{
+    background:none;border:1px solid var(--line);border-radius:7px;
+    color:var(--muted);font:inherit;font-size:.78rem;
+    padding:.5rem .8rem;margin-top:.8rem;cursor:pointer;
+  }
+  .status{
+    position:fixed;left:50%;transform:translateX(-50%);
+    bottom:calc(1rem + env(safe-area-inset-bottom));
+    background:var(--surface);border:1px solid var(--line);
+    color:var(--muted);font-size:.76rem;
+    padding:.4rem .8rem;border-radius:99px;
+    opacity:0;transition:opacity .25s;pointer-events:none;
+  }
+  .status.show{opacity:1}
+  @media (prefers-reduced-motion:reduce){.status{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="strip weeks" id="weeks" role="tablist" aria-label="Woche"></div>
+  <div class="strip days" id="days" role="tablist" aria-label="Trainingstag"></div>
+</header>
+
+<div class="banner" id="banner" hidden>Deload — halbe Satzzahl, 4–5 RIR, Gewichte aus Woche 6 halten</div>
+
+<main id="main"></main>
+
+<footer>
+  <div id="summary"></div>
+  <button id="reset" type="button">Alle Eintragungen löschen</button>
+</footer>
+
+<div class="status" id="status"></div>
+
+<script>
+const SETS = { 1:0, 2:0, 3:1, 4:1, 5:2, 6:2, 7:'deload' };
+
+const PLAN = [
+  { day:"Tag 1", label:"Beine · Delts · Waden", ex:[
+    {n:"Hackenschmidt-Maschine", s:[3,4,4], r:"6–10", rir:"1–2", p:"3 min"},
+    {n:"Sitzender Beinbeuger",   s:[3,4,4], r:"8–12", rir:"1–2", p:"3 min"},
+    {n:"Beinstrecker",           s:[3,3,4], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Hip Thrust",             s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Seitheben-Maschine",     s:[4,4,5], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Wadenheben sitzend",     s:[3,4,4], r:"8–12", rir:"0–1", p:"90–120 s", rp:true}
+  ]},
+  { day:"Tag 2", label:"Oberkörper", ex:[
+    {n:"KH-Schrägbankdrücken",         s:[3,4,4], r:"6–10", rir:"1–2", p:"3 min"},
+    {n:"Latzug neutraler Griff",       s:[3,4,4], r:"6–10", rir:"1–2", p:"3 min"},
+    {n:"LH-Flachbankdrücken",          s:[2,2,2], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Maschinenrudern Brustauflage", s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Pec-Deck",                     s:[2,2,2], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Kabel-Pullover stehend",       s:[2,2,2], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Reverse Pec-Deck",             s:[2,3,3], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Kabel-Überkopf-Trizeps",       s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Preacher-Curl langer Arm",     s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"}
+  ]},
+  { day:"Tag 3", label:"Beine · Delts · Waden", ex:[
+    {n:"Sitzender Beinbeuger",   s:[3,4,4], r:"8–12", rir:"1–2", p:"3 min"},
+    {n:"Hackenschmidt-Maschine", s:[3,4,4], r:"6–10", rir:"1–2", p:"3 min"},
+    {n:"Beinstrecker",           s:[3,3,4], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Hip Thrust",             s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Seitheben-Maschine",     s:[4,4,5], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Wadenheben sitzend",     s:[3,4,4], r:"8–12", rir:"0–1", p:"90–120 s", rp:true}
+  ]},
+  { day:"Tag 4", label:"Oberkörper", ex:[
+    {n:"Latzug neutraler Griff",       s:[3,4,4], r:"6–10", rir:"1–2", p:"3 min"},
+    {n:"KH-Schrägbankdrücken",         s:[3,4,4], r:"6–10", rir:"1–2", p:"3 min"},
+    {n:"Maschinenrudern Brustauflage", s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"LH-Flachbankdrücken",          s:[2,2,2], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Kabel-Pullover stehend",       s:[2,2,2], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Pec-Deck",                     s:[2,2,2], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Reverse Pec-Deck",             s:[2,3,3], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Preacher-Curl langer Arm",     s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Kabel-Überkopf-Trizeps",       s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"}
+  ]},
+  { day:"Tag 5", label:"Delts · Arme · Waden", ex:[
+    {n:"Seitheben-Maschine",       s:[4,5,6], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Kabel-Überkopf-Trizeps",   s:[3,4,4], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Preacher-Curl langer Arm", s:[2,3,3], r:"8–12", rir:"0–1", p:"90–120 s"},
+    {n:"Reverse Pec-Deck",         s:[2,3,3], r:"10–15", rir:"0–1", p:"90–120 s"},
+    {n:"Wadenheben sitzend",       s:[3,4,4], r:"8–12", rir:"0–1", p:"90–120 s", rp:true}
+  ]}
+];
+
+let week = 1, day = 0;
+const cache = {};          // week -> {dayIdx: {exIdx: [{kg,reps}]}}
+let saveTimer = null;
+
+const $weeks = document.getElementById('weeks');
+const $days  = document.getElementById('days');
+const $main  = document.getElementById('main');
+const $banner= document.getElementById('banner');
+const $status= document.getElementById('status');
+const $summary=document.getElementById('summary');
+
+function setCount(ex, w){
+  const col = SETS[w];
+  if(col === 'deload') return Math.max(1, Math.ceil(ex.s[2] / 2));
+  return ex.s[col];
+}
+function rirFor(ex, w){ return SETS[w] === 'deload' ? "4–5" : ex.rir; }
+
+function toast(msg){
+  $status.textContent = msg;
+  $status.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>$status.classList.remove('show'), 1600);
+}
+
+async function loadWeek(w){
+  if(cache[w]) return cache[w];
+  try{
+    const res = await window.storage.get('log:w'+w);
+    cache[w] = res ? JSON.parse(res.value) : {};
+  }catch(e){
+    cache[w] = {};
+  }
+  return cache[w];
+}
+
+function queueSave(w){
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async ()=>{
+    try{
+      await window.storage.set('log:w'+w, JSON.stringify(cache[w] || {}));
+    }catch(e){
+      toast('Nicht gespeichert');
+    }
+  }, 500);
+}
+
+function entry(w, d, e, i){
+  const wk = cache[w] || {};
+  return (((wk[d]||{})[e]||[])[i]) || null;
+}
+
+function buildTabs(){
+  $weeks.innerHTML = '';
+  for(let w=1; w<=7; w++){
+    const b = document.createElement('button');
+    b.type='button'; b.role='tab';
+    b.textContent = w===7 ? 'Woche 7' : 'Woche '+w;
+    if(w===7) b.dataset.deload = '1';
+    b.setAttribute('aria-selected', w===week);
+    b.onclick = ()=>{ week=w; render(); b.scrollIntoView({block:'nearest',inline:'center'}); };
+    $weeks.appendChild(b);
+  }
+  $days.innerHTML = '';
+  PLAN.forEach((p, idx)=>{
+    const b = document.createElement('button');
+    b.type='button'; b.role='tab';
+    b.textContent = p.day;
+    b.setAttribute('aria-selected', idx===day);
+    b.onclick = ()=>{ day=idx; render(); window.scrollTo({top:0}); };
+    $days.appendChild(b);
+  });
+}
+
+async function render(){
+  await loadWeek(week);
+  if(week > 1) await loadWeek(week-1);
+  buildTabs();
+
+  $banner.hidden = SETS[week] !== 'deload';
+
+  const p = PLAN[day];
+  $main.innerHTML = '';
+  let total = 0;
+
+  p.ex.forEach((ex, ei)=>{
+    const n = setCount(ex, week);
+    total += n;
+
+    const box = document.createElement('section');
+    box.className = 'ex';
+
+    const h = document.createElement('h2');
+    h.textContent = ex.n;
+    box.appendChild(h);
+
+    const meta = document.createElement('div');
+    meta.className='meta';
+    meta.innerHTML =
+      '<span><b>'+n+'</b> Sätze</span>'+
+      '<span><b>'+ex.r+'</b> Wdh.</span>'+
+      '<span>RIR '+rirFor(ex,week)+'</span>'+
+      '<span>'+ex.p+'</span>'+
+      (ex.rp && SETS[week]!=='deload' ? '<span class="rp">Rest-Pause im letzten Satz</span>' : '');
+    box.appendChild(meta);
+
+    const head = document.createElement('div');
+    head.className='head';
+    head.innerHTML = '<span></span><span>kg</span><span>Wdh.</span><span>Vorwoche</span>';
+    box.appendChild(head);
+
+    for(let i=0; i<n; i++){
+      const row = document.createElement('div');
+      row.className='row';
+
+      const idx = document.createElement('div');
+      idx.className='idx'; idx.textContent = (i+1);
+      row.appendChild(idx);
+
+      const cur = entry(week, day, ei, i) || {};
+
+      const kg = document.createElement('input');
+      kg.type='text'; kg.inputMode='decimal'; kg.placeholder='–';
+      kg.value = cur.kg ?? '';
+      kg.setAttribute('aria-label', ex.n+' Satz '+(i+1)+' Gewicht');
+
+      const rp = document.createElement('input');
+      rp.type='text'; rp.inputMode='numeric'; rp.placeholder='–';
+      rp.value = cur.reps ?? '';
+      rp.setAttribute('aria-label', ex.n+' Satz '+(i+1)+' Wiederholungen');
+
+      function mark(){
+        row.classList.toggle('filled', !!(kg.value && rp.value));
+      }
+      function store(){
+        const wk = cache[week] = cache[week] || {};
+        const dd = wk[day] = wk[day] || {};
+        const ee = dd[ei] = dd[ei] || [];
+        ee[i] = { kg:kg.value, reps:rp.value };
+        mark(); queueSave(week);
+      }
+      kg.oninput = store; rp.oninput = store;
+      mark();
+
+      row.appendChild(kg); row.appendChild(rp);
+
+      const prev = document.createElement('div');
+      prev.className='prev';
+      if(week > 1){
+        const pv = entry(week-1, day, ei, i);
+        prev.textContent = pv && pv.kg && pv.reps ? pv.kg+'×'+pv.reps : '';
+      }
+      row.appendChild(prev);
+
+      box.appendChild(row);
+    }
+
+    $main.appendChild(box);
+  });
+
+  $summary.textContent = p.day+' · '+p.label+' · '+total+' Arbeitssätze';
+}
+
+document.getElementById('reset').onclick = async ()=>{
+  if(!confirm('Alle eingetragenen Gewichte und Wiederholungen löschen?')) return;
+  for(let w=1; w<=7; w++){
+    try{ await window.storage.delete('log:w'+w); }catch(e){}
+    delete cache[w];
+  }
+  toast('Gelöscht');
+  render();
+};
+
+render();
+</script>
+</body>
+</html>
